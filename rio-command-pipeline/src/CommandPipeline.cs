@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Rio.CommandPipeline {
 	/// <summary>
@@ -19,8 +20,11 @@ namespace Rio.CommandPipeline {
 
 		/// <inheritdoc/>
 		public async Task SignalAsync(CommandPipelineArgs? e = default, CancellationToken? token = default) {
-			if (RunHandlerAsync == null)
+			if (RunHandlerAsync == null) {
+				_sb.Append("RunHandlerAsync has no subscribers.");
+				InternalLog();
 				return;
+			}
 
 			e ??= CommandPipelineArgs.Empty;
 
@@ -46,16 +50,20 @@ namespace Rio.CommandPipeline {
 					await InternalSignalAsync(EndHandlerAsync, listeners, e, token);
 			}
 			catch (Exception error) {
-				if (_logger != null)
-					InternalLog(error.Message);
+				if (_logger != null) {
+					_sb.Append(error.Message);
+					InternalLog(LogLevel.Error);
+				}
 
 				e.CurrentState = CommandPipelineState.ERROR;
 				InvokeErrorCaughtCallbacks(ref e, ref error);
 				InvokeErrorThrownCallbacks(ref e, ref error);
 			}
 			finally {
-				if (_logger != null)
-					InternalLog("Pipeline execution completed.");
+				if (_logger != null) {
+					_sb.Append("Pipeline execution completed.");
+					InternalLog();
+				}
 
 				_invocationList.Clear();
 				e.CurrentState = CommandPipelineState.FINAL;
@@ -139,17 +147,32 @@ namespace Rio.CommandPipeline {
 		public void InvokeEndCallbacks() => InternalInvokeCallback(_endCallbacks, ref CommandPipelineArgs.StaticRef);
 
 		/// <inheritdoc/>
-		public void InvokeFinallyCallbacks()
-			=> InternalInvokeCallback(_finallyCallbacks, ref CommandPipelineArgs.StaticRef);
+		public void InvokeFinallyCallbacks() {
+			_sb.Append("Invoking finally callbacks.");
+			InternalLog(LogLevel.Information);
+			InternalInvokeCallback(_finallyCallbacks, ref CommandPipelineArgs.StaticRef);
+		}
 
 		/// <inheritdoc/>
-		public void InvokeStartCallbacks(CommandPipelineArgs e) => InternalInvokeCallback(_startCallbacks, ref e);
+		public void InvokeStartCallbacks(CommandPipelineArgs e) {
+			_sb.Append("Invoking start callbacks.");
+			InternalLog(LogLevel.Information);
+			InternalInvokeCallback(_startCallbacks, ref e);
+		}
 
 		/// <inheritdoc/>
-		public void InvokeEndCallbacks(CommandPipelineArgs e) => InternalInvokeCallback(_endCallbacks, ref e);
+		public void InvokeEndCallbacks(CommandPipelineArgs e) {
+			_sb.Append("Invoking end callbacks.");
+			InternalLog(LogLevel.Information);
+			InternalInvokeCallback(_endCallbacks, ref e);
+		}
 
 		/// <inheritdoc/>
-		public void InvokeFinallyCallbacks(CommandPipelineArgs e) => InternalInvokeCallback(_finallyCallbacks, ref e);
+		public void InvokeFinallyCallbacks(CommandPipelineArgs e) {
+			_sb.Append("Invoking finally callbacks.");
+			InternalLog(LogLevel.Information);
+			InternalInvokeCallback(_finallyCallbacks, ref e);
+		}
 
 		/// <summary>
 		/// Asynchronously invokes the given delegate and populates the listeners list with its invocation list.
@@ -162,6 +185,8 @@ namespace Rio.CommandPipeline {
 		/// <returns>A Task representing the asynchronous operation.</returns>
 		async Task InternalSignalAsync(CommandPipelineDelegate del, List<CommandPipelineDelegate> listeners,
 			CommandPipelineArgs e, CancellationToken? token) {
+			_sb.Append($"Async signal started ({del.Method.Name}).");
+			InternalLog(LogLevel.Information);
 			listeners.Clear();
 			_invocationList.Clear();
 			listeners = del.GetInvocationList().DelegatesAs<CommandPipelineDelegate>();
@@ -172,6 +197,8 @@ namespace Rio.CommandPipeline {
 				_invocationList.Add(listener.Invoke(this, e, token.Value));
 
 			await Task.WhenAll(_invocationList);
+			_sb.Append($"Async signal ended. ({del.Method.Name}).");
+			InternalLog(LogLevel.Information);
 		}
 
 		/// <summary>
@@ -190,8 +217,11 @@ namespace Rio.CommandPipeline {
 			ref CommandPipelineDelegate[] subscribers, Subscription subscription) {
 			if (subscription == Subscription.REGISTER) {
 				foreach (var subscriber in subscribers) {
-					if (owner == null)
+					if (owner == null) {
 						owner += subscriber.Invoke;
+						_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
+						InternalLog();
+					}
 					else {
 						var invokeList = owner.GetInvocationList();
 
@@ -199,6 +229,8 @@ namespace Rio.CommandPipeline {
 							continue;
 
 						owner += subscriber.Invoke;
+						_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
+						InternalLog();
 					}
 				}
 			}
@@ -286,14 +318,18 @@ namespace Rio.CommandPipeline {
 			foreach (var errorThrownCallback in _errorThrownCallbacks)
 				errorThrownCallback.Invoke(args, error);
 		}
-		
+
 		/// <summary>
 		/// Internal logging method.
 		/// </summary>
-		/// <param name="output">The output message to be logged.</param>
-		void InternalLog(string? output) {
+		/// <param name="logLevel">Log level to output to</param>
+		void InternalLog(LogLevel logLevel = LogLevel.Trace) {
+			if (_logger == null)
+				return;
+
 			var time = DateTime.Now.TimeOfDay.ToString(@"hh\:mm\:ss");
-			_logger?.LogError("{Time}" + " " + "{Output}", time, output);
+			_logger.Log(logLevel, "{Time}" + " " + "{Output}", time, _sb.ToString());
+			_sb.Clear();
 		}
 
 		/// <summary>
@@ -308,6 +344,9 @@ namespace Rio.CommandPipeline {
 
 #region PLUMBING
 
+		/// Initializes a new instance of the CommandPipeline class.
+		/// @param logger (optional) The logger to be used for logging messages. If not provided, logging functionality will be disabled.
+		/// /
 		public CommandPipeline(ILogger? logger = null) {
 			_logger = logger;
 		}
@@ -317,6 +356,7 @@ namespace Rio.CommandPipeline {
 		event CommandPipelineDelegate? EndHandlerAsync;
 
 		readonly ILogger?                                        _logger;
+		readonly StringBuilder                                   _sb                   = new();
 		readonly List<Task>                                      _invocationList       = new();
 		readonly HashSet<Action<CommandPipelineArgs>>            _startCallbacks       = new();
 		readonly HashSet<Action<CommandPipelineArgs>>            _endCallbacks         = new();
@@ -324,6 +364,9 @@ namespace Rio.CommandPipeline {
 		readonly HashSet<Action<CommandPipelineArgs, Exception>> _errorCaughtCallbacks = new();
 		readonly HashSet<Action<CommandPipelineArgs, Exception>> _errorThrownCallbacks = new();
 
+		/// <summary>
+		/// Enum representing subscription options.
+		/// </summary>
 		enum Subscription : byte {
 			REGISTER,
 			UNREGISTER
