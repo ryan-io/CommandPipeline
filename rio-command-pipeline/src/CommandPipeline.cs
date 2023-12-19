@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Rio.CommandPipeline {
@@ -217,20 +218,15 @@ namespace Rio.CommandPipeline {
 			ref CommandPipelineDelegate[] subscribers, Subscription subscription) {
 			if (subscription == Subscription.REGISTER) {
 				foreach (var subscriber in subscribers) {
-					if (owner == null) {
-						owner += subscriber.Invoke;
-						_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
-						InternalLog();
-					}
+					if (owner == null) 
+						SubscribeToOwner(ref owner, subscriber);
 					else {
 						var invokeList = owner.GetInvocationList();
 
 						if (invokeList.Contains(subscriber))
 							continue;
 
-						owner += subscriber.Invoke;
-						_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
-						InternalLog();
+						SubscribeToOwner(ref owner, subscriber);
 					}
 				}
 			}
@@ -245,11 +241,19 @@ namespace Rio.CommandPipeline {
 					if (!invokeList.Contains(subscriber))
 						continue;
 
+					_sb.Append($"Removed {subscriber.Method.Name} to the invocation list of {owner!.Method.Name}.");
 					owner -= subscriber.Invoke;
+					InternalLog();
 				}
 			}
 
 			return this;
+		}
+
+		void SubscribeToOwner([AllowNull] ref CommandPipelineDelegate owner, CommandPipelineDelegate subscriber) {
+			owner += subscriber.Invoke;
+			_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
+			InternalLog();
 		}
 
 		/// <summary>
