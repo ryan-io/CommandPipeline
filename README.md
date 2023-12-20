@@ -245,7 +245,12 @@ using Rio.CommandPipeline;
 public class Test {  
     public async Task MyTestMethod() {  
        // Instantiate a new CommandPipelineBroker  
-       // The default takes params string[] ids       // These ids are used to register new instances of ICommandPipeline to an internal container.       // The container key is the id.       // You can register as many ids as you want.       // With an instance of CommandPipelineBroker, you can access the ICommandPipeline instances via the indexer.       var pipelineBroker1 = new CommandPipelineBroker("myIdOne", "myIdTwo");  
+       // The default takes params string[] ids
+       // These ids are used to register new instances of ICommandPipeline to an internal container.
+       // The container key is the id.
+       // You can register as many ids as you want.
+       // With an instance of CommandPipelineBroker, you can access the ICommandPipeline instances via the indexer.
+       var pipelineBroker1 = new CommandPipelineBroker("myIdOne", "myIdTwo");  
          
        // You also do not need to provide any ids  
        var pipelineBroker2 = new CommandPipelineBroker();  
@@ -254,18 +259,20 @@ public class Test {
        var pipelineTwo = pipelineBroker1["myIdTwo"];  
          
        // You can also add new instances of ICommandPipeline to the broker.  
-              // These pipeline instances functional identically to the "StandAlone" example.  
+       // These pipeline instances functional identically to the "StandAlone" example.  
        pipelineOne.RegisterWork(MyWorkMethodAsync);  
        pipelineTwo.RegisterOnFinally(OnEnd);  
          
        // You can signal the pipeline to start by calling SignalAsync after retrieving an instance from the broker.  
        await pipelineOne.SignalAsync();  
-       //await pipelineOne.SignalAsync(PipelineObject.Empty, new CancellationToken());  
-              // Or let the broker do it for you.  
+       //await pipelineOne.SignalAsync(PipelineObject.Empty, new CancellationToken());
+
+       // Or let the broker do it for you.  
        await pipelineBroker1.SignalAsync("myIdOne");  
        // await pipelineBroker1.SignalAsync("myIdOne", PipelineObject.Empty, new CancellationToken());  
   
-       // You can also register event handlers to the pipeline.       pipelineBroker1.Register("myNewPipeline", new CommandPipeline());  
+       // You can also register event handlers to the pipeline.
+       pipelineBroker1.Register("myNewPipeline", new CommandPipeline());  
     }  
   
     async Task MyWorkMethodAsync(object? sender, PipelineObject? pipelineObject, CancellationToken token) {  
