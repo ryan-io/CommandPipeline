@@ -154,6 +154,7 @@ Once a pipeline instance is created, access to the fluent API becomes available:
 ##### Standalone Instance(s)
 
 ```csharp
+
 using Rio.CommandPipeline;  
   
 public class Test {  
@@ -221,6 +222,7 @@ public class Test {
        return Task.CompletedTask;  
     }  
 }
+
 ```
 
 <!-- ROADMAP -->
