@@ -64,7 +64,7 @@
 # Overview
 
 <p align="center">
-<img  src="https://i.imgur.com/zvxU7nA.png" width="1200"/>
+<img  src="https://i.imgur.com/teIkaPo.png" width="1200"/>
 </p>
 
 My goal for this project was to create a simple, efficient, and small API for handling events in .NET ecosystems asynchronously. This project does not utilize RX or .NET's built in Observer system. Instead, the goal was to create an EventHandler with the following characteristics:
