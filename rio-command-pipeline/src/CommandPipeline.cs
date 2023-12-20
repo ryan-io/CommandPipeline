@@ -11,44 +11,52 @@ namespace Rio.CommandPipeline {
 		/// Represents a delegate for an asynchronous command pipeline.
 		/// </summary>
 		/// <param name="o">The object to be passed to the pipeline.</param>
-		/// <param name="e">The command pipeline arguments.</param>
+		/// <param name="pObj">The command pipeline arguments.</param>
 		/// <param name="token">Cancellation token to cancel the pipeline execution.</param>
 		/// <returns>A task representing the asynchronous pipeline execution.</returns>
-		public delegate Task CommandPipelineDelegate(object? o, CommandPipelineArgs? e, CancellationToken token);
+		public delegate Task PipelineDelegate(object? o, PipelineObject? pObj, CancellationToken token);
 
+		/// <summary>
+		/// Gets or sets a value indicating whether logging is enabled on Command Pipeline.
+		/// </summary>
+		/// <value>
+		///   <c>true</c> if logging is enabled; otherwise, <c>false</c>.
+		/// </value>
+		public bool IsLoggingEnabled { get; set; }
+		
 		/// <inheritdoc/>
 		public ICommandPipelineSignals AuxiliarySignals => this;
 
 		/// <inheritdoc/>
-		public async Task SignalAsync(CommandPipelineArgs? e = default, CancellationToken? token = default) {
+		public async Task SignalAsync(PipelineObject? pObj = default, CancellationToken? token = default) {
 			if (RunHandlerAsync == null) {
 				_sb.Append("RunHandlerAsync has no subscribers.");
 				InternalLog();
 				return;
 			}
 
-			e ??= CommandPipelineArgs.Empty;
+			pObj ??= PipelineObject.Empty;
 
 			try {
-				var listeners = new List<CommandPipelineDelegate>();
+				var listeners = new List<PipelineDelegate>();
 				token ??= CancellationToken.None;
 
-				e.CurrentState = CommandPipelineState.START;
-				InvokeStartCallbacks(e);
+				pObj.CurrentState = CommandPipelineState.START;
+				InvokeStartCallbacks(pObj);
 
 				if (StartHandlerAsync != null)
-					await InternalSignalAsync(StartHandlerAsync, listeners, e, token);
+					await InternalSignalAsync(StartHandlerAsync, listeners, pObj, token);
 
-				e.CurrentState = CommandPipelineState.RUNNING;
+				pObj.CurrentState = CommandPipelineState.RUNNING;
 
 				if (RunHandlerAsync != null)
-					await InternalSignalAsync(RunHandlerAsync, listeners, e, token);
+					await InternalSignalAsync(RunHandlerAsync, listeners, pObj, token);
 
-				e.CurrentState = CommandPipelineState.END;
-				InvokeEndCallbacks(e);
+				pObj.CurrentState = CommandPipelineState.END;
+				InvokeEndCallbacks(pObj);
 
 				if (EndHandlerAsync != null)
-					await InternalSignalAsync(EndHandlerAsync, listeners, e, token);
+					await InternalSignalAsync(EndHandlerAsync, listeners, pObj, token);
 			}
 			catch (Exception error) {
 				if (_logger != null) {
@@ -56,9 +64,9 @@ namespace Rio.CommandPipeline {
 					InternalLog(LogLevel.Error);
 				}
 
-				e.CurrentState = CommandPipelineState.ERROR;
-				InvokeErrorCaughtCallbacks(ref e, ref error);
-				InvokeErrorThrownCallbacks(ref e, ref error);
+				pObj.CurrentState = CommandPipelineState.ERROR;
+				InvokeErrorCaughtCallbacks(ref pObj, ref error);
+				InvokeErrorThrownCallbacks(ref pObj, ref error);
 			}
 			finally {
 				if (_logger != null) {
@@ -67,109 +75,109 @@ namespace Rio.CommandPipeline {
 				}
 
 				_invocationList.Clear();
-				e.CurrentState = CommandPipelineState.FINAL;
-				InvokeFinallyCallbacks(e);
+				pObj.CurrentState = CommandPipelineState.FINAL;
+				InvokeFinallyCallbacks(pObj);
 			}
 		}
 
 		/// <inheritdoc/>
-		public ICommandPipeline Register(params CommandPipelineDelegate[] subscribers) {
+		public ICommandPipeline RegisterWork(params PipelineDelegate[] subscribers) {
 			InternalDelegateSubscribe(ref RunHandlerAsync, ref subscribers, Subscription.REGISTER);
 			return this;
 		}
 
 		/// <inheritdoc/>
-		public ICommandPipeline Unregister(params CommandPipelineDelegate[] subscribers) {
+		public ICommandPipeline UnregisterWork(params PipelineDelegate[] subscribers) {
 			InternalDelegateSubscribe(ref RunHandlerAsync, ref subscribers, Subscription.UNREGISTER);
 			return this;
 		}
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnStart(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline RegisterOnStart(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_startCallbacks, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnStart(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline UnregisterOnStart(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_startCallbacks, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnEnd(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline RegisterOnEnd(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_endCallbacks, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnEnd(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline UnregisterOnEnd(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_endCallbacks, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnStartAsync(params CommandPipelineDelegate[] subscribers)
+		public ICommandPipeline RegisterOnStartAsync(params PipelineDelegate[] subscribers)
 			=> InternalDelegateSubscribe(ref StartHandlerAsync, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnStartAsync(params CommandPipelineDelegate[] subscribers)
+		public ICommandPipeline UnregisterOnStartAsync(params PipelineDelegate[] subscribers)
 			=> InternalDelegateSubscribe(ref StartHandlerAsync, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnEndAsync(params CommandPipelineDelegate[] subscribers)
+		public ICommandPipeline RegisterOnEndAsync(params PipelineDelegate[] subscribers)
 			=> InternalDelegateSubscribe(ref EndHandlerAsync, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnEndAsync(params CommandPipelineDelegate[] subscribers)
+		public ICommandPipeline UnregisterOnEndAsync(params PipelineDelegate[] subscribers)
 			=> InternalDelegateSubscribe(ref EndHandlerAsync, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnErrorCaught(params Action<CommandPipelineArgs, Exception>[] subscribers)
+		public ICommandPipeline RegisterOnErrorCaught(params Action<PipelineObject, Exception>[] subscribers)
 			=> InternalErrorSubscribe(_errorCaughtCallbacks, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnErrorCaught(params Action<CommandPipelineArgs, Exception>[] subscribers)
+		public ICommandPipeline UnregisterOnErrorCaught(params Action<PipelineObject, Exception>[] subscribers)
 			=> InternalErrorSubscribe(_errorCaughtCallbacks, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnErrorThrown(params Action<CommandPipelineArgs, Exception>[] subscribers)
+		public ICommandPipeline RegisterOnErrorThrown(params Action<PipelineObject, Exception>[] subscribers)
 			=> InternalErrorSubscribe(_errorThrownCallbacks, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnErrorThrown(params Action<CommandPipelineArgs, Exception>[] subscribers)
+		public ICommandPipeline UnregisterOnErrorThrown(params Action<PipelineObject, Exception>[] subscribers)
 			=> InternalErrorSubscribe(_errorThrownCallbacks, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline RegisterOnFinally(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline RegisterOnFinally(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_finallyCallbacks, ref subscribers, Subscription.REGISTER);
 
 		/// <inheritdoc/>
-		public ICommandPipeline UnregisterOnFinally(params Action<CommandPipelineArgs>[] subscribers)
+		public ICommandPipeline UnregisterOnFinally(params Action<PipelineObject>[] subscribers)
 			=> InternalCallbackSubscribe(_finallyCallbacks, ref subscribers, Subscription.UNREGISTER);
 
 		/// <inheritdoc/>
 		public void InvokeStartCallbacks()
-			=> InternalInvokeCallback(_startCallbacks, ref CommandPipelineArgs.StaticRef);
+			=> InternalInvokeCallback(_startCallbacks, ref PipelineObject.StaticRef);
 
 		/// <inheritdoc/>
-		public void InvokeEndCallbacks() => InternalInvokeCallback(_endCallbacks, ref CommandPipelineArgs.StaticRef);
+		public void InvokeEndCallbacks() => InternalInvokeCallback(_endCallbacks, ref PipelineObject.StaticRef);
 
 		/// <inheritdoc/>
 		public void InvokeFinallyCallbacks() {
 			_sb.Append("Invoking finally callbacks.");
 			InternalLog(LogLevel.Information);
-			InternalInvokeCallback(_finallyCallbacks, ref CommandPipelineArgs.StaticRef);
+			InternalInvokeCallback(_finallyCallbacks, ref PipelineObject.StaticRef);
 		}
 
 		/// <inheritdoc/>
-		public void InvokeStartCallbacks(CommandPipelineArgs e) {
+		public void InvokeStartCallbacks(PipelineObject e) {
 			_sb.Append("Invoking start callbacks.");
 			InternalLog(LogLevel.Information);
 			InternalInvokeCallback(_startCallbacks, ref e);
 		}
 
 		/// <inheritdoc/>
-		public void InvokeEndCallbacks(CommandPipelineArgs e) {
+		public void InvokeEndCallbacks(PipelineObject e) {
 			_sb.Append("Invoking end callbacks.");
 			InternalLog(LogLevel.Information);
 			InternalInvokeCallback(_endCallbacks, ref e);
 		}
 
 		/// <inheritdoc/>
-		public void InvokeFinallyCallbacks(CommandPipelineArgs e) {
+		public void InvokeFinallyCallbacks(PipelineObject e) {
 			_sb.Append("Invoking finally callbacks.");
 			InternalLog(LogLevel.Information);
 			InternalInvokeCallback(_finallyCallbacks, ref e);
@@ -184,13 +192,13 @@ namespace Rio.CommandPipeline {
 		/// <param name="e">The CommandPipelineArgs arguments to be passed to each listener.</param>
 		/// <param name="token">The CancellationToken to be passed to each listener.</param>
 		/// <returns>A Task representing the asynchronous operation.</returns>
-		async Task InternalSignalAsync(CommandPipelineDelegate del, List<CommandPipelineDelegate> listeners,
-			CommandPipelineArgs e, CancellationToken? token) {
+		async Task InternalSignalAsync(PipelineDelegate del, List<PipelineDelegate> listeners,
+			PipelineObject e, CancellationToken? token) {
 			_sb.Append($"Async signal started ({del.Method.Name}).");
 			InternalLog(LogLevel.Information);
 			listeners.Clear();
 			_invocationList.Clear();
-			listeners = del.GetInvocationList().DelegatesAs<CommandPipelineDelegate>();
+			listeners = del.GetInvocationList().DelegatesAs<PipelineDelegate>();
 
 			token ??= CancellationToken.None;
 
@@ -214,8 +222,8 @@ namespace Rio.CommandPipeline {
 		/// If the subscription type is Unregister, the method removes the subscribers from the owner delegate.
 		/// If the owner delegate is null, it does nothing and returns the current object.
 		/// </remarks>
-		ICommandPipeline InternalDelegateSubscribe(ref CommandPipelineDelegate? owner,
-			ref CommandPipelineDelegate[] subscribers, Subscription subscription) {
+		ICommandPipeline InternalDelegateSubscribe(ref PipelineDelegate? owner,
+			ref PipelineDelegate[] subscribers, Subscription subscription) {
 			if (subscription == Subscription.REGISTER) {
 				foreach (var subscriber in subscribers) {
 					if (owner == null) 
@@ -250,7 +258,7 @@ namespace Rio.CommandPipeline {
 			return this;
 		}
 
-		void SubscribeToOwner([AllowNull] ref CommandPipelineDelegate owner, CommandPipelineDelegate subscriber) {
+		void SubscribeToOwner([AllowNull] ref PipelineDelegate owner, PipelineDelegate subscriber) {
 			owner += subscriber.Invoke;
 			_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
 			InternalLog();
@@ -265,8 +273,8 @@ namespace Rio.CommandPipeline {
 		/// <returns>
 		/// The current instance of the command pipeline after subscribing or unsubscribing the callbacks.
 		/// </returns>
-		ICommandPipeline InternalCallbackSubscribe(ISet<Action<CommandPipelineArgs>> callbacks,
-			ref Action<CommandPipelineArgs>[] subscribers, Subscription subscription) {
+		ICommandPipeline InternalCallbackSubscribe(ISet<Action<PipelineObject>> callbacks,
+			ref Action<PipelineObject>[] subscribers, Subscription subscription) {
 			if (subscription == Subscription.REGISTER) {
 				foreach (var cb in subscribers)
 					callbacks.Add(cb);
@@ -288,8 +296,8 @@ namespace Rio.CommandPipeline {
 		/// <param name="subscribers">The array of subscribers to manage.</param>
 		/// <param name="subscription">The type of subscription (Register or Unregister).</param>
 		/// <returns>The ICommandPipeline instance.</returns>
-		ICommandPipeline InternalErrorSubscribe(ISet<Action<CommandPipelineArgs, Exception>> del,
-			ref Action<CommandPipelineArgs, Exception>[] subscribers, Subscription subscription) {
+		ICommandPipeline InternalErrorSubscribe(ISet<Action<PipelineObject, Exception>> del,
+			ref Action<PipelineObject, Exception>[] subscribers, Subscription subscription) {
 			if (subscription == Subscription.REGISTER) {
 				foreach (var cb in subscribers)
 					del.Add(cb);
@@ -306,21 +314,21 @@ namespace Rio.CommandPipeline {
 		/// <summary>
 		/// Invokes the error caught callbacks in the command pipeline.
 		/// </summary>
-		/// <param name="args">The command pipeline arguments.</param>
+		/// <param name="pipelineObject">The command pipeline arguments.</param>
 		/// <param name="error">The exception that was caught.</param>
-		void InvokeErrorCaughtCallbacks(ref CommandPipelineArgs args, ref Exception error) {
+		void InvokeErrorCaughtCallbacks(ref PipelineObject pipelineObject, ref Exception error) {
 			foreach (var errorCaughtCallback in _errorCaughtCallbacks)
-				errorCaughtCallback.Invoke(args, error);
+				errorCaughtCallback.Invoke(pipelineObject, error);
 		}
 
 		/// <summary>
 		/// Invokes the error thrown callbacks with the provided CommandPipelineArgs and Exception objects.
 		/// </summary>
-		/// <param name="args">The CommandPipelineArgs object to pass to the error thrown callbacks.</param>
+		/// <param name="pObj">The CommandPipelineArgs object to pass to the error thrown callbacks.</param>
 		/// <param name="error">The Exception object to pass to the error thrown callbacks.</param>
-		void InvokeErrorThrownCallbacks(ref CommandPipelineArgs args, ref Exception error) {
+		void InvokeErrorThrownCallbacks(ref PipelineObject pObj, ref Exception error) {
 			foreach (var errorThrownCallback in _errorThrownCallbacks)
-				errorThrownCallback.Invoke(args, error);
+				errorThrownCallback.Invoke(pObj, error);
 		}
 
 		/// <summary>
@@ -341,7 +349,7 @@ namespace Rio.CommandPipeline {
 		/// </summary>
 		/// <param name="callback">The set of callbacks to be invoked.</param>
 		/// <param name="e">The command pipeline arguments to be passed to the callbacks.</param>
-		static void InternalInvokeCallback(HashSet<Action<CommandPipelineArgs>> callback, ref CommandPipelineArgs e) {
+		static void InternalInvokeCallback(HashSet<Action<PipelineObject>> callback, ref PipelineObject e) {
 			foreach (var cb in callback)
 				cb.Invoke(e);
 		}
@@ -355,18 +363,18 @@ namespace Rio.CommandPipeline {
 			_logger = logger;
 		}
 
-		event CommandPipelineDelegate? RunHandlerAsync;
-		event CommandPipelineDelegate? StartHandlerAsync;
-		event CommandPipelineDelegate? EndHandlerAsync;
+		event PipelineDelegate? RunHandlerAsync;
+		event PipelineDelegate? StartHandlerAsync;
+		event PipelineDelegate? EndHandlerAsync;
 
 		readonly ILogger?                                        _logger;
 		readonly StringBuilder                                   _sb                   = new();
 		readonly List<Task>                                      _invocationList       = new();
-		readonly HashSet<Action<CommandPipelineArgs>>            _startCallbacks       = new();
-		readonly HashSet<Action<CommandPipelineArgs>>            _endCallbacks         = new();
-		readonly HashSet<Action<CommandPipelineArgs>>            _finallyCallbacks     = new();
-		readonly HashSet<Action<CommandPipelineArgs, Exception>> _errorCaughtCallbacks = new();
-		readonly HashSet<Action<CommandPipelineArgs, Exception>> _errorThrownCallbacks = new();
+		readonly HashSet<Action<PipelineObject>>            _startCallbacks       = new();
+		readonly HashSet<Action<PipelineObject>>            _endCallbacks         = new();
+		readonly HashSet<Action<PipelineObject>>            _finallyCallbacks     = new();
+		readonly HashSet<Action<PipelineObject, Exception>> _errorCaughtCallbacks = new();
+		readonly HashSet<Action<PipelineObject, Exception>> _errorThrownCallbacks = new();
 
 		/// <summary>
 		/// Enum representing subscription options.
@@ -415,10 +423,10 @@ namespace Rio.CommandPipeline {
 		/// <summary>
 		/// Signals the asynchronous event by invoking the event handlers in the pipeline.
 		/// </summary>
-		/// <param name="e">The <see cref="CommandPipelineArgs"/> object containing the event data. If not specified, <see cref="CommandPipelineArgs.Empty"/> is used.</param>
+		/// <param name="pObj">The <see cref="PipelineObject"/> object containing the event data. </param>
 		/// <param name="token">A <see cref="CancellationToken"/> to cancel the operation. If not specified, <see cref="CancellationToken.None"/> is used.</param>
 		/// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-		Task SignalAsync(CommandPipelineArgs? e = default, CancellationToken? token = default);
+		Task SignalAsync(PipelineObject? pObj = default, CancellationToken? token = default);
 
 		/// <summary>
 		/// Registers the given subscribers to the command pipeline.
@@ -427,28 +435,28 @@ namespace Rio.CommandPipeline {
 		/// <returns>
 		/// The current instance of the command pipeline.
 		/// </returns>
-		ICommandPipeline Register(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline RegisterWork(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Unregisters one or more subscribers from the command pipeline.
 		/// </summary>
 		/// <param name="subscribers">The list of subscribers to unregister.</param>
 		/// <returns>The command pipeline instance.</returns>
-		ICommandPipeline Unregister(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline UnregisterWork(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Registers asynchronous pipeline delegates to be executed on start.
 		/// </summary>
 		/// <param name="subscribers">The asynchronous pipeline delegates to be registered.</param>
 		/// <returns>The command pipeline with the registered delegates.</returns>
-		ICommandPipeline RegisterOnStartAsync(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline RegisterOnStartAsync(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Unregisters the given subscribers from the <see cref="CommandPipeline.StartHandlerAsync"/> pipeline.
 		/// </summary>
 		/// <param name="subscribers">The list of subscribers to unregister.</param>
 		/// <returns>The updated <see cref="ICommandPipeline"/> instance after unregistering the subscribers.</returns>
-		ICommandPipeline UnregisterOnStartAsync(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline UnregisterOnStartAsync(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Registers one or more async pipeline delegates to be called when the pipeline ends.
@@ -458,55 +466,55 @@ namespace Rio.CommandPipeline {
 		/// <returns>
 		/// Returns an ICommandPipeline representing the pipeline instance, after registering the subscribers.
 		/// </returns>
-		ICommandPipeline RegisterOnEndAsync(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline RegisterOnEndAsync(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Unregisters the specified subscribers from the <see cref="CommandPipeline.EndHandlerAsync"/> event.
 		/// </summary>
 		/// <param name="subscribers">The subscribers to be unregistered.</param>
 		/// <returns>The instance of the <see cref="ICommandPipeline"/> after unregistering the subscribers.</returns>
-		ICommandPipeline UnregisterOnEndAsync(params CommandPipeline.CommandPipelineDelegate[] subscribers);
+		ICommandPipeline UnregisterOnEndAsync(params CommandPipeline.PipelineDelegate[] subscribers);
 
 		/// <summary>
 		/// Registers a list of subscribers to be called when the <see cref="CommandPipeline"/> starts.
 		/// </summary>
 		/// <param name="subscribers">The array of subscribers to register.</param>
 		/// <returns>The <see cref="ICommandPipeline"/> instance.</returns>
-		ICommandPipeline RegisterOnStart(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline RegisterOnStart(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Unregisters one or more subscribers from being invoked when the pipeline starts.
 		/// </summary>
 		/// <param name="subscribers">The array of subscribers to unregister.</param>
 		/// <returns>The modified command pipeline instance after unregistering the subscribers.</returns>
-		ICommandPipeline UnregisterOnStart(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline UnregisterOnStart(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Registers one or more action delegates to be executed at the end of the command pipeline.
 		/// </summary>
 		/// <param name="subscribers">The action delegates to register.</param>
 		/// <returns>The modified ICommandPipeline instance.</returns>
-		ICommandPipeline RegisterOnEnd(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline RegisterOnEnd(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Unregisters subscribers from the OnEnd event of ICommandPipeline.
 		/// </summary>
 		/// <param name="subscribers">The subscribers to unregister.</param>
 		/// <returns>The modified ICommandPipeline instance.</returns>
-		ICommandPipeline UnregisterOnEnd(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline UnregisterOnEnd(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Registers the given methods as subscribers to the 'finally' event of the command pipeline.
 		/// </summary>
 		/// <param name="subscribers">The methods to be registered as subscribers.</param>
 		/// <returns>The updated command pipeline instance.</returns>
-		ICommandPipeline RegisterOnFinally(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline RegisterOnFinally(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Unregisters a set of subscribers from the OnFinally event. </summary>
 		/// <param name="subscribers">A variable number of delegates that represent the subscribers to unsubscribe.</param>
 		/// <returns>The instance of the ICommandPipeline on which this method was called.</returns>
-		ICommandPipeline UnregisterOnFinally(params Action<CommandPipelineArgs>[] subscribers);
+		ICommandPipeline UnregisterOnFinally(params Action<PipelineObject>[] subscribers);
 
 		/// <summary>
 		/// Registers subscribers to be notified when an error is caught in the command pipeline.
@@ -516,14 +524,14 @@ namespace Rio.CommandPipeline {
 		/// <remarks>
 		/// Subscribers will be executed in the order they are provided.
 		/// </remarks>
-		ICommandPipeline RegisterOnErrorCaught(params Action<CommandPipelineArgs, Exception>[] subscribers);
+		ICommandPipeline RegisterOnErrorCaught(params Action<PipelineObject, Exception>[] subscribers);
 
 		/// <summary>
 		/// Unregisters error caught subscribers from the ICommandPipeline.
 		/// </summary>
 		/// <param name="subscribers">An array of delegates to be unregistered.</param>
 		/// <returns>The modified ICommandPipeline instance.</returns>
-		ICommandPipeline UnregisterOnErrorCaught(params Action<CommandPipelineArgs, Exception>[] subscribers);
+		ICommandPipeline UnregisterOnErrorCaught(params Action<PipelineObject, Exception>[] subscribers);
 
 		/// <summary>
 		/// Registers one or more subscribers to be executed when an error is thrown during command pipeline execution.
@@ -532,14 +540,14 @@ namespace Rio.CommandPipeline {
 		/// <returns>
 		/// An ICommandPipeline object.
 		/// </returns>
-		ICommandPipeline RegisterOnErrorThrown(params Action<CommandPipelineArgs, Exception>[] subscribers);
+		ICommandPipeline RegisterOnErrorThrown(params Action<PipelineObject, Exception>[] subscribers);
 
 		/// <summary>
 		/// Unregisters the specified subscribers from the internal error thrown event of the command pipeline.
 		/// </summary>
 		/// <param name="subscribers">The subscribers to unregister from the error thrown event.</param>
 		/// <returns>An <see cref="ICommandPipeline"/> instance.</returns>
-		ICommandPipeline UnregisterOnErrorThrown(params Action<CommandPipelineArgs, Exception>[] subscribers);
+		ICommandPipeline UnregisterOnErrorThrown(params Action<PipelineObject, Exception>[] subscribers);
 	}
 
 	public interface ICommandPipelineSignals {
@@ -564,18 +572,18 @@ namespace Rio.CommandPipeline {
 		/// Invokes the start callbacks with the specified command pipeline arguments.
 		/// </summary>
 		/// <param name="e">The command pipeline arguments to pass to the callbacks.</param>
-		void InvokeStartCallbacks(CommandPipelineArgs e);
+		void InvokeStartCallbacks(PipelineObject e);
 
 		/// <summary>
 		/// Invokes the end callbacks on the given <paramref name="e"/> CommandPipelineArgs.
 		/// </summary>
 		/// <param name="e">The CommandPipelineArgs to invoke end callbacks on.</param>
-		void InvokeEndCallbacks(CommandPipelineArgs e);
+		void InvokeEndCallbacks(PipelineObject e);
 
 		/// <summary>
 		/// Invokes the finally callbacks for the given command pipeline arguments.
 		/// </summary>
 		/// <param name="e">The command pipeline arguments.</param>
-		void InvokeFinallyCallbacks(CommandPipelineArgs e);
+		void InvokeFinallyCallbacks(PipelineObject e);
 	}
 }
