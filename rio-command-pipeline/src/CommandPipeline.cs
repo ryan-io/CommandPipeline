@@ -258,6 +258,11 @@ namespace Rio.CommandPipeline {
 			return this;
 		}
 
+		/// <summary>
+		/// Subscribes a subscriber method to the owner method.
+		/// </summary>
+		/// <param name="owner">The owner method to subscribe to.</param>
+		/// <param name="subscriber">The subscriber method to be added to the owner's invocation list.</param>
 		void SubscribeToOwner([AllowNull] ref PipelineDelegate owner, PipelineDelegate subscriber) {
 			owner += subscriber.Invoke;
 			_sb.Append($"Added {subscriber.Method.Name} to the invocation list of {owner.Method.Name}.");
